@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+slack-bolt==1.18.3
+slack-sdk==3.21.2
+sqlmodel
+transformers
+torch         # or accelerate if you install differently
+python-dotenv
+httpx
