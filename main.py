@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import FastAPI, Request
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
-from sqlmodel import Field, SQLModel, create_engine, Session, select
+from sqlmodel import SQLModel, Field, create_engine, Session, select
 from transformers import pipeline
 from dotenv import load_dotenv
 import asyncio
@@ -14,7 +14,7 @@ load_dotenv()
 SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"]
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 HUGGINGFACE_MODEL = os.environ.get("HUGGINGFACE_MODEL", "sshleifer/distilbart-cnn-12-6")
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./hng_bot.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 HOST_URL = os.environ.get("HOST_URL", "")
 
 # ---------- DB models ----------
