@@ -213,8 +213,15 @@ async def handle_message_events(event, say, logger):
 # ---------- FastAPI routes for Slack events and health ----------
 @fastapi_app.post("/slack/events")
 async def endpoint(req: Request):
-    # pass requests to slack_bolt handler
+    data = await req.json()
+
+    # ✅ Handle Slack URL verification challenge
+    if data.get("type") == "url_verification":
+        return {"challenge": data["challenge"]}
+
+    # ✅ Otherwise, let Bolt handle normal Slack events
     return await handler.handle(req)
+
 
 @fastapi_app.get("/health")
 async def health():
