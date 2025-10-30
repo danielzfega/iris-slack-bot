@@ -20,6 +20,11 @@ Powered by FastAPI + Slack Bolt SDK + HuggingFace Transformers
 🧵 Thread-safe | Handles real Slack events + modals  
 📦 DB storage | Saves user track preferences (SQLModel)
 
+## ✨ Commands
+
+| Command | Purpose |
+|--------|-----------|
+/register-track | Indicate the track(s) (Frontend, Backend, PM etc.) you want to be notified of
 ---
 
 ## 🏗️ Architecture
@@ -101,3 +106,21 @@ ngrok http 8000
 ## Update Slack Event URL:
 ```bash
 https://<ngrok-id>.ngrok.io/slack/events
+
+```
+## 🏗️ Sample Task Summary
+Sample output given by bot
+Frontend Task
+Build the dashboard UI using React, Tailwind
+Include login state & API calls
+Deadline: Friday, Jan 12
+API: GET /user/profile
+
+---
+
+## 🏗️ Bot outputs
+- Summary
+- Endpoints
+- Deliverables
+- Deadline
+- Resource Link
