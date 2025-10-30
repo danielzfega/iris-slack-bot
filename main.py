@@ -191,7 +191,8 @@ async def handle_message_events(event, say, logger):
     if not detected_track:
         return
 
-    summary = summarize_task(text)
+    summary = summarize_task(text, forced_track=detected_track)
+
     title = f"New {detected_track.capitalize()} Task"
     try:
         permalink = await app.client.chat_getPermalink(channel=channel, message_ts=event.get("ts"))
