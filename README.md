@@ -108,17 +108,18 @@ ngrok http 8000
 https://<ngrok-id>.ngrok.io/slack/events
 
 ```
-## 🏗️ Sample Task Summary
+## Sample Task Summary
 Sample output given by bot
+
 Frontend Task
-Build the dashboard UI using React, Tailwind
-Include login state & API calls
-Deadline: Friday, Jan 12
-API: GET /user/profile
+ - Build the dashboard UI using React, Tailwind
+ - Include login state & API calls
+ - Deadline: Thur, Oct 30
+ - API: GET /user/profile
 
 ---
 
-## 🏗️ Bot outputs
+## Bot outputs
 - Summary
 - Endpoints
 - Deliverables
