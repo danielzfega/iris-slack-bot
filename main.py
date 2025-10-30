@@ -62,34 +62,26 @@ def detect_track_by_keywords(text: str) -> Optional[str]:
                 return track
     return None
 
-def summarize_text(text: str, max_length=140) -> str:
-    # Hugging Face summarizer expects shorter inputs; truncate if needed
-    # Use pipeline; handle exceptions
-    try:
-        # The distilbart model expects up to ~1024 tokens; so slicing characters is a safe simple approach
-        if len(text) > 15000:
-            text = text[:15000]
-        summary_list = summarizer(text, max_length=max_length, min_length=30, do_sample=False)
-        return summary_list[0]["summary_text"]
-    except Exception as e:
-        print("Summarization failed:", e)
-        # fallback: naive extract (first 200 chars)
-        return text.strip()[:400] + ("..." if len(text) > 400 else "")
 
-async def notify_track_users(track: str, title: str, summary: str, original_text: str, slack_link: Optional[str]):
+async def notify_track_users(tracks: List[str], title: str, summary: str, original_text: str, slack_link: Optional[str]):
     with Session(engine) as session:
-        users = session.exec(select(UserTrack).where(UserTrack.track == track)).all()
-    for u in users:
-        dm_text = f"*{title}*  \n{summary}\n\n"
+        all_users = session.exec(select(UserTrack)).all()
+
+    for u in all_users:
+        user_tracks = u.track_list()
+        if not any(t in tracks for t in user_tracks):
+            continue  # skip users not in any selected track
+
+        dm_text = f"*{title}*\n{summary}\n"
         if slack_link:
-            dm_text += f"<{slack_link}|View original announcement>\n"
-        dm_text += "\n_This was sent by HNG Task Assistant_"
+            dm_text += f"\n<{slack_link}|View original announcement>"
+        dm_text += "\n\n_This was sent by Iris_"
+
         try:
-            res = await app.client.chat_postMessage(channel=u.user_id, text=dm_text)
-            print("Sent DM to", u.user_id, res["ts"])
+            await app.client.chat_postMessage(channel=u.user_id, text=dm_text)
         except Exception as e:
-            print("Failed to DM user", u.user_id, e)
-            # TODO: fallback to email if contact == 'email'
+            print("DM failed for", u.user_id, e)
+
 
 
 @app.command("/register-track")
@@ -186,36 +178,29 @@ async def handle_view_submission(ack, body, view, logger):
 # ---------- Event listener: message in channels ----------
 @app.event("message")
 async def handle_message_events(event, say, logger):
-    # Only process messages posted in #announcements-projects (you can check channel id instead)
-    text = event.get("text", "") or ""
+    text = event.get("text", "")
     channel = event.get("channel")
     subtype = event.get("subtype")
-    # ignore bot messages and edits
-    if subtype is not None:
+    if subtype:  # ignore bots/edits
         return
-    # TODO: replace with actual channel ID for #announcements-projects to avoid false positives
-    # We'll accept any message that looks like an announcement (contains @channel or STAGE)
-    is_announcement = ("@channel" in text) or ("stage" in text.lower()) or ("task" in text.lower())
-    if not is_announcement:
+
+    if not ("@channel" in text or "task" in text.lower() or "stage" in text.lower()):
         return
-    # detect track
-    track = detect_track_by_keywords(text)
-    # fallback: ask humans or default to broadcast (we'll skip if None)
-    if not track:
-        # optional: you can try a simple ML classification here
-        print("No track detected for message, skipping:", text[:80])
+
+    detected_track = detect_track_by_keywords(text)
+    if not detected_track:
         return
-    # summarise
-    title = f"New {track.capitalize()} Announcement"
-    summary = summarize_text(text, max_length=150)
-    # build link to original message if available (Slack permalink API)
+
+    summary = summarize_task(text)
+    title = f"New {detected_track.capitalize()} Task"
     try:
         permalink = await app.client.chat_getPermalink(channel=channel, message_ts=event.get("ts"))
         slack_link = permalink.get("permalink")
     except Exception:
         slack_link = None
-    # notify users
-    await notify_track_users(track, title, summary, text, slack_link)
+
+    await notify_track_users([detected_track], title, summary, text, slack_link)
+
 
 # ---------- FastAPI routes for Slack events and health ----------
 @fastapi_app.post("/slack/events")
