@@ -9,6 +9,7 @@ from sqlmodel import SQLModel, Field, create_engine, Session, select
 from transformers import pipeline
 from dotenv import load_dotenv
 import asyncio
+from summarizer import summarize_task
 
 load_dotenv()
 SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"]
@@ -17,13 +18,17 @@ HUGGINGFACE_MODEL = os.environ.get("HUGGINGFACE_MODEL", "sshleifer/distilbart-cn
 DATABASE_URL = os.environ.get("DATABASE_URL")
 HOST_URL = os.environ.get("HOST_URL", "")
 
-# ---------- DB models ----------
+
 class UserTrack(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: str  # Slack user id
-    track: str
-    contact: str = "slack"  # slack or email
+    user_id: str
+    tracks: str  # comma-separated list: "backend,frontend"
+    contact: str = "slack"
     email: Optional[str] = None
+
+    def track_list(self) -> List[str]:
+        return [t.strip() for t in self.tracks.split(",") if t.strip()]
+
 
 engine = create_engine(DATABASE_URL, echo=False)
 SQLModel.metadata.create_all(engine)
@@ -86,27 +91,26 @@ async def notify_track_users(track: str, title: str, summary: str, original_text
             print("Failed to DM user", u.user_id, e)
             # TODO: fallback to email if contact == 'email'
 
-# ---------- Slash command: /register-track ----------
+
 @app.command("/register-track")
 async def handle_register(ack, body, client, logger):
     await ack()
     trigger_id = body.get("trigger_id")
-    # open a modal with a select
     await client.views_open(
         trigger_id=trigger_id,
         view={
             "type": "modal",
             "callback_id": "register_track_modal",
-            "title": {"type": "plain_text", "text": "Register Track"},
+            "title": {"type": "plain_text", "text": "Register Tracks"},
             "submit": {"type": "plain_text", "text": "Save"},
             "blocks": [
                 {
                     "type": "input",
                     "block_id": "track_select",
                     "element": {
-                        "type": "static_select",
-                        "action_id": "track_selected",
-                        "placeholder": {"type": "plain_text", "text": "Choose your track"},
+                        "type": "multi_static_select",
+                        "action_id": "tracks_selected",
+                        "placeholder": {"type": "plain_text", "text": "Choose one or more tracks"},
                         "options": [
                             {"text": {"type": "plain_text", "text": "Backend"}, "value": "backend"},
                             {"text": {"type": "plain_text", "text": "Frontend"}, "value": "frontend"},
@@ -118,7 +122,7 @@ async def handle_register(ack, body, client, logger):
                             {"text": {"type": "plain_text", "text": "No-Code"}, "value": "no-code"},
                         ],
                     },
-                    "label": {"type": "plain_text", "text": "Select track"}
+                    "label": {"type": "plain_text", "text": "Select your tracks"},
                 },
                 {
                     "type": "input",
@@ -126,55 +130,58 @@ async def handle_register(ack, body, client, logger):
                     "element": {
                         "type": "static_select",
                         "action_id": "contact_selected",
-                        "placeholder": {"type": "plain_text", "text": "How do you want to be contacted?"},
+                        "placeholder": {"type": "plain_text", "text": "Preferred contact method"},
                         "options": [
                             {"text": {"type": "plain_text", "text": "Slack DM"}, "value": "slack"},
-                            {"text": {"type": "plain_text", "text": "Email (provide below)"}, "value": "email"}
-                        ]
+                            {"text": {"type": "plain_text", "text": "Email (provide below)"}, "value": "email"},
+                        ],
                     },
-                    "label": {"type": "plain_text", "text": "Contact method"}
+                    "label": {"type": "plain_text", "text": "Contact method"},
                 },
                 {
                     "type": "input",
                     "block_id": "email_block",
                     "optional": True,
-                    "element": {"type": "plain_text_input", "action_id": "email_input", "placeholder": {"type":"plain_text","text":"you@example.com"}},
-                    "label": {"type": "plain_text", "text": "Email (optional)"}
-                }
-            ]
-        }
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "email_input",
+                        "placeholder": {"type": "plain_text", "text": "you@example.com"},
+                    },
+                    "label": {"type": "plain_text", "text": "Email (optional)"},
+                },
+            ],
+        },
     )
+
 
 @app.view("register_track_modal")
 async def handle_view_submission(ack, body, view, logger):
     await ack()
     user_id = body["user"]["id"]
     values = view["state"]["values"]
-    track = values["track_select"]["track_selected"]["selected_option"]["value"]
+    selected_tracks = values["track_select"]["tracks_selected"].get("selected_options", [])
+    tracks = [opt["value"] for opt in selected_tracks]
     contact = values["contact_input"]["contact_selected"]["selected_option"]["value"]
     email = values.get("email_block", {}).get("email_input", {}).get("value")
-    # save to DB
+
     with Session(engine) as session:
-        stmt = select(UserTrack).where(UserTrack.user_id == user_id)
-        existing = session.exec(stmt).first()
+        existing = session.exec(select(UserTrack).where(UserTrack.user_id == user_id)).first()
         if existing:
-            existing.track = track
+            existing.tracks = ",".join(tracks)
             existing.contact = contact
             existing.email = email
             session.add(existing)
         else:
-            ut = UserTrack(user_id=user_id, track=track, contact=contact, email=email)
+            ut = UserTrack(user_id=user_id, tracks=",".join(tracks), contact=contact, email=email)
             session.add(ut)
         session.commit()
-    # post ephemeral confirmation
-    try:
-        await app.client.chat_postEphemeral(
-            channel=user_id,
-            user=user_id,
-            text=f"Saved: track={track}, contact={contact}"
-        )
-    except Exception:
-        pass
+
+    await app.client.chat_postEphemeral(
+        channel=user_id,
+        user=user_id,
+        text=f"✅ Saved: tracks={', '.join(tracks)}, contact={contact}"
+    )
+
 
 # ---------- Event listener: message in channels ----------
 @app.event("message")
